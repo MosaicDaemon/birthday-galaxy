@@ -1,0 +1,1841 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<meta name="theme-color" content="#070509" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>金芷伊生日快乐 · 手势星河</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #000;
+  color: #e8eeff;
+  font: 14px/1.55 "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  user-select: none;
+}
+
+.hidden { display: none !important; }
+
+/* 深空底色。CSS 变量 --nebula 由程序按 config.look.nebula 设置，
+   0 = 纯黑（星星最亮眼），大一点会有一层极淡的星云色。 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(58% 44% at 24% 22%, rgba(211, 157, 82, calc(0.09 * var(--nebula, 0.45))), transparent 70%),
+    radial-gradient(54% 42% at 76% 72%, rgba(214, 94, 126, calc(0.075 * var(--nebula, 0.45))), transparent 70%),
+    radial-gradient(46% 58% at 56% 8%, rgba(72, 113, 168, calc(0.06 * var(--nebula, 0.45))), transparent 70%),
+    radial-gradient(82% 82% at 50% 50%, #070509 0%, #000 78%);
+  z-index: 0;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+}
+
+#skeleton {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#cam { display: none; }
+
+/* ---------- HUD ---------- */
+#hud {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: 18px;
+  z-index: 4;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(8, 12, 26, 0.42);
+  border: 1px solid rgba(120, 170, 255, 0.16);
+  backdrop-filter: blur(6px);
+  min-width: 190px;
+}
+
+#title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: transparent;
+  background: linear-gradient(90deg, #fff6dd 0%, #ffd27e 48%, #ff9fae 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: 0 0 18px rgba(255, 190, 128, 0.46);
+}
+
+#hud .row { display: flex; align-items: center; gap: 7px; margin-top: 6px; color: #9fb6de; font-size: 12px; }
+#hud .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #5ce1a0;
+  box-shadow: 0 0 8px #5ce1a0;
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+.dim { color: #8ea3c8; font-size: 12px; }
+
+/* 当前手势意图（由平滑后的开合度推出来，不是原始识别值） */
+#intent-label {
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #ffe6a6;
+  text-shadow: 0 0 14px rgba(255, 210, 120, 0.5);
+}
+
+/* 按 D 显示的手型数据（排查方向问题时很有用） */
+#hand-debug {
+  position: fixed;
+  top: 152px;
+  left: 18px;
+  z-index: 4;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(8, 12, 26, 0.5);
+  border: 1px solid rgba(120, 170, 255, 0.16);
+  color: #a9c6f0;
+  font: 11px/1.6 Consolas, "Courier New", monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
+#measure { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.measure-label { font-size: 12px; color: #9fb6de; }
+#measure .meter {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(140, 180, 255, 0.16);
+  overflow: hidden;
+}
+#measure .meter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--v, 100%);
+  background: linear-gradient(90deg, #fff4d6, #ffd27e, #ff9fae);
+  box-shadow: 0 0 12px rgba(255, 190, 128, 0.85);
+  transition: width .06s linear;
+}
+#measure .pct { font-size: 12px; color: #cfe2ff; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+
+#hints {
+  position: fixed;
+  left: 0; right: 0; bottom: 14px;
+  z-index: 4;
+  text-align: center;
+  line-height: 1.7;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
+}
+#hints b { color: #ffe9a8; font-weight: 600; }
+
+/* ---------- 提示 / 错误 / 加载 ---------- */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 108px;
+  transform: translate(-50%, 12px);
+  z-index: 6;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(10, 16, 34, 0.82);
+  border: 1px solid rgba(130, 180, 255, 0.28);
+  color: #dce9ff;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.start-panel {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(86vw, 360px);
+  text-align: center;
+  z-index: 8;
+}
+
+.start-mark {
+  font-size: 34px;
+  line-height: 1;
+  color: #ffd27e;
+  text-shadow: 0 0 22px rgba(255, 180, 110, 0.75);
+}
+
+.start-title {
+  margin-top: 10px;
+  color: #fff3d6;
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+#start-button {
+  appearance: none;
+  margin-top: 18px;
+  padding: 11px 32px;
+  border: 1px solid rgba(255, 212, 130, 0.55);
+  border-radius: 999px;
+  color: #1c1008;
+  background: linear-gradient(120deg, #fff2c9, #ffd17c 55%, #ff9fa9);
+  font: 700 15px/1 "Microsoft YaHei UI", "微软雅黑", sans-serif;
+  letter-spacing: 2px;
+  box-shadow: 0 8px 28px rgba(255, 164, 110, 0.25);
+}
+
+#start-button:active {
+  transform: scale(0.97);
+}
+
+.panel {
+  position: fixed;
+  z-index: 5;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: rgba(9, 13, 28, 0.72);
+  border: 1px solid rgba(130, 180, 255, 0.2);
+  backdrop-filter: blur(8px);
+}
+.center-panel {
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  max-width: 420px;
+}
+.center-panel p { margin-top: 8px; }
+.error-panel {
+  left: 50%; bottom: 96px;
+  transform: translateX(-50%);
+  max-width: min(680px, 90vw);
+  color: #ffd9d9;
+  border-color: rgba(255, 130, 130, 0.35);
+  background: rgba(38, 10, 14, 0.8);
+  text-align: center;
+  line-height: 1.7;
+}
+.spinner {
+  width: 30px; height: 30px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(140, 190, 255, 0.25);
+  border-top-color: #8ec5ff;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+/* 摄像头画面隐藏时（按 V）保持纯星空 */
+#stage.no-cam { background: transparent; }
+
+@media (max-width: 760px) {
+  #hud {
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
+    min-width: 0;
+    padding: 9px 11px;
+  }
+
+  #title {
+    font-size: 13px;
+    letter-spacing: 2px;
+  }
+
+  #hints {
+    display: none;
+  }
+
+  .center-panel {
+    max-width: 86vw;
+  }
+}
+
+</style>
+</head>
+<body>
+  <!-- 摄像头画面被读进 WebGL 当背景，这个 video 本身不显示 -->
+  <video id="cam" class="hidden" playsinline muted autoplay></video>
+
+  <canvas id="stage"></canvas>
+  <canvas id="skeleton"></canvas>
+
+  <div id="loading" class="panel center-panel">
+    <div class="spinner"></div>
+    <p id="loading-text">正在启动摄像头并加载手部识别模型…</p>
+    <p class="dim">首次加载约 7MB 模型，已随程序离线保存，不需要联网。</p>
+  </div>
+
+  <div id="error" class="panel error-panel" hidden></div>
+
+  <div id="start-gate" class="panel start-panel" hidden>
+    <div class="start-mark">✦</div>
+    <div class="start-title">金芷伊生日快乐</div>
+    <button id="start-button" type="button">点击开始</button>
+    <p class="dim">需要使用摄像头识别握拳和张开手势</p>
+  </div>
+
+  <div id="hud">
+    <div id="title">金芷伊生日快乐</div>
+    <div class="row">
+      <span class="dot"></span>
+      <span id="fps">-- FPS</span>
+    </div>
+    <div id="intent-label">张开 · 文字亮起</div>
+    <div id="center-readout" class="dim">鼠标 · 聚合 0%</div>
+    <div id="measure">
+      <span class="measure-label">开合度</span>
+      <div class="meter"><i></i></div>
+      <span id="measure-label" class="pct">100%</span>
+    </div>
+  </div>
+
+  <pre id="hand-debug" class="hidden"></pre>
+
+  <div id="hints">
+    <div><b>五指收紧（握拳）</b> → 星光聚合 &nbsp;|&nbsp; <b>手掌张开</b> → 金芷伊生日快乐</div>
+    <div class="dim">画面只显示星星（不画摄像头和骨架，才不会被摄像头帧率拖慢）</div>
+    <div class="dim">I 反转方向 · C 查看阈值 · D 数据 · V 摄像头画面 · S 骨架 · G 指示环 · R 重排文字 · H 隐藏提示 · M 镜像</div>
+  </div>
+
+  <div id="toast"></div>
+  <pre id="selftest-result" hidden></pre>
+  <pre id="js-errors" hidden></pre>
+<script>
+(() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __esm = (fn, res, err) => function __init() {
+    if (err) throw err[0];
+    try {
+      return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+    } catch (e) {
+      throw err = [e], e;
+    }
+  };
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+
+  // js/selftest.js
+  var selftest_exports = {};
+  __export(selftest_exports, {
+    installSelfTest: () => installSelfTest
+  });
+  function installSelfTest({ galaxy, config: config2, errors, resultEl }) {
+    const lines = [];
+    try {
+      config2.view.showCamera = true;
+      const fake = { videoWidth: 1280, videoHeight: 720, readyState: 4 };
+      for (let i = 0; i < 20; i++) {
+        const t = i / 19;
+        galaxy.setCollapse(t);
+        galaxy.setCenter(0.35 + 0.3 * t, 0.5);
+        galaxy.advance(16.7);
+        galaxy.drawVideo(fake);
+        galaxy.render(16.7);
+        if (i % 6 === 0) galaxy.regenerate();
+      }
+      const real = errors.filter((e) => !/手部识别|摄像头|mediaDevices|getUserMedia|NotAllowed|NotFound/i.test(e));
+      let glError = 0;
+      const gl = galaxy.gl();
+      if (gl) {
+        glError = gl.getError();
+        if (glError !== gl.NO_ERROR) lines.push("WebGL \u9519\u8BEF\u7801: " + glError);
+      }
+      if (real.length) lines.push("\u9875\u9762\u9519\u8BEF: " + real.join(" | "));
+      lines.unshift(
+        `${glError || real.length ? "FAIL" : "PASS"} stars=${galaxy.count} rendered=20 collapse=0..1 glError=${glError}`
+      );
+    } catch (err) {
+      lines.unshift("FAIL \u6E32\u67D3\u5F02\u5E38: " + (err?.message || err));
+    }
+    if (resultEl) resultEl.textContent = lines.join("\n");
+    return lines[0];
+  }
+  var init_selftest = __esm({
+    "js/selftest.js"() {
+    }
+  });
+
+  // js/config.js
+  var config = {
+    camera: {
+      width: 1280,
+      height: 720,
+      fps: 30,
+      mirror: true
+      // 像照镜子一样左右翻转
+    },
+    // ============================================================
+    // 手势 → 意图
+    // 摄像头最多只有 30fps，识别一次还要几十毫秒。如果显示内容直接跟着
+    // 每一帧识别结果走，画面就会一顿一顿的。
+    // 所以这里分成两件事：
+    //   detectEvery  识别频率 —— 只用来自"看看现在手是什么样"
+    //   predict/glide 意图平滑 —— 每个渲染帧都推算一次手掌在哪、张开到多少，
+    //                 在两次识别之间用速度外推，于是动画一直是丝滑的
+    // 也就是说：显示的是"意图"，不是摄像头的原始画面。
+    // ============================================================
+    intent: {
+      detectEvery: 1,
+      // 每 N 帧做一次识别（MediaPipe 自己会跳过重复的视频帧）
+      maxHands: 1,
+      // 最多识别几只手
+      minConfidence: 0.45,
+      // —— 五指开合的判据：固定阈值，不做任何学习 ——
+      // 每根手指算「指尖到手腕 ÷ 手腕到中指根」，与手掌大小、远近、左右手无关：
+      //   张开 ≈ 1.6~2.0   收紧 ≈ 0.8~1.0
+      // 程序**不会**自动调整这两个值（自动学习会让判断标准随时间漂移，
+      // 用久了反而不准，已按要求移除）。任何时候、用多久，结果都一样。
+      // 若你的手不在这附近：按 D 看"手型度量"读数，把张开时 / 握拳时的
+      // 读数分别填到下面两行即可。
+      openRatio: 1.75,
+      fistRatio: 0.95,
+      openBand: 0.15,
+      // 落在区间两端各这一小段里就直接算完全张开/握紧（徒手很难正好做满）
+      invert: false,
+      // 方向反了就按 I 键
+      expCurve: 2,
+      // 灵敏度曲线：>1 让中间的变化更明显
+      openDeadzone: 0.35,
+      // 手只要明显张开，文字就保持完整，避免识别波动把字拉散
+      // —— 丝滑衔接用的参数 ——
+      // 注意：识别结果故意**不做**时间平滑，所有平滑都在渲染帧上做，
+      // 所以这些时间常数直接决定"跟不跟手"。60fps 下 tau=0.1s 约 6 帧到位。
+      posTau: 0.038,
+      // 手掌位置的平滑时间常数：越小越贴手（有外推补延迟，所以可以很小）
+      openTau: 0.28,
+      // 张开方向的平滑（秒）：越大 => 散开越缓
+      closeTau: 0.5,
+      // 聚合方向的平滑：取大 => "缓缓聚拢"的粘稠感
+      // 星星"聚散动画"本身再缓一手（与上面两项独立，纯粹调节观感快慢）
+      //   调大 => 聚散更慢更缓；调小 => 更干脆。0.05 就已经很快了。
+      collapseEaseTau: 0.15,
+      leadMs: 70,
+      // 补上 MediaPipe 推理本身那几十毫秒的延迟（补偿越准，越"贴手"）
+      maxLeadPx: 0.28,
+      // 外推距离上限（屏幕归一化坐标）：太大会在快速挥手时显得"抢"
+      velGlide: 0.055,
+      // 速度估计的平滑：调小 => 外推更跟得上快速移动（太小会跟着噪声抖）
+      velResetMs: 400,
+      // 两次识别间隔超过这么久就丢弃速度估计
+      velReleaseTau: 0.35,
+      // 手离开画面后速度的衰减时间常数（惯性滑行，不急停）
+      maxSpeed: 2.4,
+      // 位置速度上限（屏幕宽度/秒），防止误判导致乱飞
+      engageMs: 1600,
+      // 识别短暂丢失时，先保持"手还在"（避免模式抖动）
+      engageRampMs: 500,
+      // 手出现/消失时，手势与鼠标两路混合的过渡时长
+      releaseMs: 700
+      // 手消失后松开快慢：与出现的速率接近，避免"进去快、出来慢"
+    },
+    // 显示哪些"采集画面"：默认都关，画面只有星空
+    view: {
+      showCamera: false,
+      // 是否把摄像头画面当背景（按 V 切换）
+      showSkeleton: false,
+      // 是否画手部骨架（按 S 切换；骨架必然受摄像头帧率限制）
+      showGestureRing: false
+      // 默认不画圆环，避免遮挡文字；按 G 可打开
+    },
+    star: {
+      count: 5200,
+      // 兼顾清晰笔画、细闪和背景星尘
+      text: {
+        content: "\u91D1\u82B7\u4F0A\u751F\u65E5\u5FEB\u4E50",
+        desktopLines: ["\u91D1\u82B7\u4F0A", "\u751F\u65E5\u5FEB\u4E50"],
+        mobileLines: ["\u91D1\u82B7\u4F0A", "\u751F\u65E5\u5FEB\u4E50"],
+        fontFamily: '"Microsoft YaHei UI", "\u5FAE\u8F6F\u96C5\u9ED1", "Microsoft YaHei", sans-serif',
+        fraction: 0.96,
+        // 96% 粒子组成文字，只保留极少量背景星尘
+        coreFraction: 0.97,
+        // 97% 文字粒子都用于实心笔画
+        sampleStep: 1,
+        haloStep: 5,
+        outlineWidth: 12,
+        haloBlur: 7,
+        letterGap: 0.075,
+        desktopCanvas: { width: 1200, height: 920, fontSize: 272 },
+        mobileCanvas: { width: 1200, height: 920, fontSize: 272 },
+        desktopWidth: 3,
+        // 两行排版后，让每个字获得更大的独立显示面积
+        mobileWidthRatio: 0.95,
+        jitter: 12e-4,
+        haloJitter: 6e-3,
+        zJitter: 8e-3,
+        haloZJitter: 0.024
+      },
+      spread: { x: 6.4, y: 3.6, z: 1.6 },
+      // 散开时星场的半边长（够大到铺满整个画面）
+      // 聚合落点：0 = 所有星星缩到同一个点（握拳时变成一颗亮星）
+      gather: { x: 0, y: 0, z: 0 },
+      depthPower: 1.25,
+      // >1 让星星更集中在中层，避免贴脸的巨点和太远的碎点
+      coreFraction: 0.35,
+      // 一部分星星更靠中心，看起来像星空而不是一个方盒
+      // 每颗星就是一个小圆点：亮度均匀、边缘一点点抗锯齿、不闪烁
+      minSize: 4.8,
+      // 最小的圆点直径（像素）
+      maxSize: 6.4,
+      // 最大的圆点直径
+      sizeBias: 1,
+      // 大小分布：1 = 在区间内均匀取，越大越偏小
+      edgeSoft: 0.1
+      // 边缘柔化：越小越像硬边圆点（0.05~0.15 比较好看）
+    },
+    collapse: {
+      fallPow: 2,
+      // 收拢曲线：2.0 = 前段几乎不动，最后一段哗地塌陷
+      stagger: 0.45,
+      // 不同星星先后抵达的时间差（0 = 一起到）
+      twist: 0,
+      // 聚合时的旋涡扭曲：0 = 全部走直线奔向手心
+      stretch: 0
+      // 聚合瞬间沿视线方向的拖尾：0 = 不拖尾（要"缩成一个点"就别抖）
+    },
+    viewer: {
+      distance: 3,
+      // 相机到星场中心的距离（越小越有"扑面而来"的感觉）
+      halfFovDeg: 28,
+      // 垂直半视角
+      dolly: 0.16,
+      // 收拢时相机往前一点点的比例，增加"被吸进去"的感觉
+      rotate: 0,
+      // 星场整体旋转速度。0 = 不转（不晕）
+      followGlide: 0.13,
+      // 星场跟随手掌位置的平滑速度：越小越"跟不上"手
+      followRange: 0.08
+      // 文字基本固定在画面中心，避免跟手时离开可读区域
+    },
+    perf: {
+      adaptive: true,
+      // 帧率偏低时自动降识别频率和渲染分辨率
+      maxDpr: 1.5,
+      // 渲染分辨率上限（retina 上设 2 会明显更吃力）
+      fpsLow: 50,
+      // 低于这个帧率就降一档
+      fpsHigh: 57,
+      // 高于这个帧率就升回一档
+      minDetectEvery: 3
+      // 识别最多降到每 3 帧一次
+    },
+    look: {
+      exposure: 1.2,
+      // 星星亮度（单颗星峰值 ≈ alpha 上限 × 这个值，保持在 1 以下才不过曝）
+      fogDensity: 0.05,
+      // 远处星星的衰减（越大越有纵深，远处会更暗）
+      nebula: 0.25,
+      // 背景压暗，提升文字对比度
+      cameraBright: 0.5
+      // 摄像头画面压暗程度（越小越像纯星空）
+    }
+  };
+
+  // js/galaxy.js
+  var VERT = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aSpread;
+layout(location = 1) in vec3 aGather;
+layout(location = 2) in vec4 aProbe;
+layout(location = 3) in vec4 aProps;
+
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform float uTime;
+uniform float uCollapse;
+uniform float uTwist;
+uniform float uStagger;
+uniform float uStretch;
+uniform float uRush;
+uniform float uMinPx;
+uniform float uMaxPx;
+uniform float uPointScale;
+uniform float uFog;
+uniform float uRotate;
+
+out vec3 vColor;
+out float vAlpha;
+
+void main() {
+  float seed = aProbe.x;
+  float sizeRnd = aProbe.y;
+
+  // \u6BCF\u9897\u661F\u81EA\u5DF1\u7684\u8FDB\u5EA6\uFF1A\u9519\u843D\u62B5\u8FBE\uFF0C\u4E0D\u662F\u6574\u7247\u540C\u65F6\u6536\u7F29
+  float delay = aProbe.w * uStagger;
+  float prog = clamp((uCollapse - delay) / (1.0 - uStagger), 0.0, 1.0);
+  prog = prog * prog * (3.0 - 2.0 * prog);
+
+  // \u5438\u8FDB\u53BB\u7684\u65F6\u5019\u6574\u56E2\u7A0D\u5FAE\u626D\u4E00\u4E0B
+  vec3 target = aGather;
+  float tw = uTwist * prog;
+  float ct = cos(tw);
+  float st = sin(tw);
+  target.xy = mat2(ct, -st, st, ct) * target.xy;
+
+  // \u671D\u5411\u955C\u5934\u7684\u62D6\u5C3E\uFF1A\u6536\u62E2\u6700\u5FEB\u65F6\u88AB\u62C9\u957F\u6210\u77ED\u7EBF
+  target.z += uStretch * uRush * aProbe.z;
+
+  vec3 pos = mix(aSpread, target, prog);
+
+  // \u6574\u7247\u661F\u573A\u53EA\u505A\u6781\u8F7B\u5FAE\u7684\u547C\u5438\u5F0F\u6F02\u79FB\u3002
+  // \u9ED8\u8BA4 uRotate = 0\uFF0C\u4E5F\u5C31\u662F\u8BF4\u661F\u573A\u4E0D\u6574\u4F53\u65CB\u8F6C\uFF08\u65CB\u8F6C\u770B\u4E45\u4E86\u4F1A\u6655\uFF09\uFF1B
+  // \u771F\u6B63\u7684"\u8DDF\u7740\u624B\u8D70"\u662F\u76F8\u673A\u5E73\u79FB\uFF0C\u89C1 render() \u91CC\u7684 view \u77E9\u9635\u3002
+  float ang = uTime * uRotate;
+  float ca = cos(ang);
+  float sa = sin(ang);
+  pos.xz = mat2(ca, -sa, sa, ca) * pos.xz;
+  pos.y += sin(uTime * 0.35 + seed * 6.283) * 0.004;
+
+  vec4 viewPos = uView * vec4(pos, 1.0);
+  gl_Position = uProj * viewPos;
+
+  float viewDist = max(0.35, -viewPos.z);
+
+  // \u6BCF\u9897\u661F\u7684\u76F4\u5F84\uFF1AminSize ~ maxSize \u4E4B\u95F4\u968F\u673A\uFF0C\u518D\u6309"\u76F8\u673A\u8DDD\u79BB / \u672C\u661F\u89C6\u8DDD"\u7F29\u653E
+  // \uFF08\u8FD1\u7684\u661F\u661F\u5927\u3001\u8FDC\u7684\u661F\u661F\u5C0F\uFF09\u3002\u6CA1\u6709\u95EA\u70C1\uFF0C\u5706\u70B9\u4FDD\u6301\u7A33\u5B9A\u3002
+  float dia = mix(uMinPx, uMaxPx, sizeRnd);
+  gl_PointSize = clamp(dia * uPointScale / viewDist, 1.0, 40.0);
+
+  float fog = exp(-uFog * max(0.0, viewDist - 1.5));
+  float away = smoothstep(2.0, 9.0, viewDist);
+  vColor = aProps.rgb;
+  // \u5B57\u5F62\u4F18\u5148\uFF1A\u4E0D\u518D\u505A\u95EA\u70C1\uFF0C\u53EA\u4FDD\u7559\u8DDD\u79BB\u548C\u96FE\u6548\u5E26\u6765\u7684\u8F7B\u5FAE\u660E\u6697
+  vAlpha = (1.0 - 0.6 * away) * fog;
+}
+`;
+  var FRAG = `#version 300 es
+precision highp float;
+in vec3 vColor;
+in float vAlpha;
+uniform float uEdge;   // \u8FB9\u7F18\u67D4\u5316\u5BBD\u5EA6
+uniform float uExposure;
+out vec4 fragColor;
+
+void main() {
+  vec2 d = gl_PointCoord - vec2(0.5);
+  float r = length(d) * 2.0;
+  if (r > 1.0) discard;
+
+  // \u4EAE\u5EA6\u5747\u5300\u7684\u5C0F\u5706\u70B9\uFF1A\u5185\u90E8\u4EAE\u5EA6\u4E00\u81F4\uFF0C\u53EA\u5728\u8FB9\u7F18\u505A\u4E00\u70B9\u70B9\u6297\u952F\u9F7F
+  float edge = max(0.02, uEdge);
+  float a = 1.0 - smoothstep(1.0 - edge, 1.0, r);
+
+  float alpha = min(1.0, a * vAlpha * uExposure);
+  fragColor = vec4(vColor * alpha, alpha);
+}
+`;
+  var QUAD_VERT = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+  var VIDEO_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec4 uRect;
+uniform float uMirror;
+uniform float uBright;
+out vec4 fragColor;
+void main() {
+  vec2 p = (vUv - uRect.xy) / uRect.zw;
+  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) discard;
+  vec2 uv = vec2(mix(p.x, 1.0 - p.x, uMirror), 1.0 - p.y);
+  vec3 col = texture(uTex, uv).rgb;
+  vec3 tinted = mix(vec3(0.02, 0.03, 0.06), col, 0.5);
+  fragColor = vec4(tinted * uBright, 1.0);
+}
+`;
+  function compile(gl, type, src, label) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh);
+      gl.deleteShader(sh);
+      throw new Error(`${label} \u7740\u8272\u5668\u7F16\u8BD1\u5931\u8D25: ${log}`);
+    }
+    return sh;
+  }
+  function program(gl, vsSrc, fsSrc, label) {
+    const p = gl.createProgram();
+    const vs = compile(gl, gl.VERTEX_SHADER, vsSrc, label + ".vs");
+    const fs = compile(gl, gl.FRAGMENT_SHADER, fsSrc, label + ".fs");
+    gl.attachShader(p, vs);
+    gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(`${label} \u7740\u8272\u5668\u94FE\u63A5\u5931\u8D25: ${gl.getProgramInfoLog(p)}`);
+    }
+    const uniforms = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const name = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, "");
+      uniforms[name] = gl.getUniformLocation(p, name);
+    }
+    return { program: p, uniforms };
+  }
+  function starColor(r, out) {
+    const stops = [
+      [0, 0.72, 0.82, 1],
+      [0.3, 0.9, 0.95, 1],
+      [0.55, 1, 1, 0.98],
+      [0.78, 1, 0.93, 0.78],
+      [1, 1, 0.82, 0.62]
+    ];
+    let a = stops[0];
+    let b = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (r >= stops[i][0] && r <= stops[i + 1][0]) {
+        a = stops[i];
+        b = stops[i + 1];
+        break;
+      }
+    }
+    const t = (r - a[0]) / Math.max(1e-6, b[0] - a[0]);
+    out[0] = a[1] + (b[1] - a[1]) * t;
+    out[1] = a[2] + (b[2] - a[2]) * t;
+    out[2] = a[3] + (b[3] - a[3]) * t;
+  }
+  function sampleTextTargets(starCfg) {
+    const textCfg = starCfg.text;
+    if (!textCfg || typeof document === "undefined") {
+      return { core: [], halo: [], worldWidth: 0, worldHeight: 0 };
+    }
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const useMobileLayout = aspect < 0.85;
+    const canvasCfg = useMobileLayout ? textCfg.mobileCanvas : textCfg.desktopCanvas;
+    const lines = useMobileLayout ? textCfg.mobileLines : textCfg.desktopLines || [textCfg.content];
+    function createTextLayer(layer) {
+      const textCanvas = document.createElement("canvas");
+      textCanvas.width = canvasCfg.width;
+      textCanvas.height = canvasCfg.height;
+      const ctx = textCanvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#fff";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${canvasCfg.fontSize}px ${textCfg.fontFamily}`;
+      if (layer === "core") {
+        ctx.lineWidth = textCfg.outlineWidth;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+      } else {
+        ctx.shadowColor = "rgba(255,255,255,0.9)";
+        ctx.shadowBlur = textCfg.haloBlur;
+      }
+      const lineGap = canvasCfg.fontSize * 0.2;
+      const lineHeight = canvasCfg.fontSize + lineGap;
+      const firstY = textCanvas.height / 2 - (lines.length - 1) * lineHeight / 2;
+      lines.forEach((line, lineIndex) => {
+        const chars = Array.from(line);
+        const charWidths = chars.map((char) => ctx.measureText(char).width);
+        const letterGap = canvasCfg.fontSize * (textCfg.letterGap === void 0 ? 0.055 : textCfg.letterGap);
+        const totalWidth = charWidths.reduce((sum, width2) => sum + width2, 0) + letterGap * Math.max(0, chars.length - 1);
+        let x = (textCanvas.width - totalWidth) / 2;
+        const y = firstY + lineIndex * lineHeight;
+        chars.forEach((char, charIndex) => {
+          if (layer === "core") ctx.strokeText(char, x, y);
+          ctx.fillText(char, x, y);
+          x += charWidths[charIndex] + letterGap;
+        });
+      });
+      return {
+        canvas: textCanvas,
+        pixels: ctx.getImageData(0, 0, textCanvas.width, textCanvas.height).data
+      };
+    }
+    const coreLayer = createTextLayer("core");
+    const haloLayer = createTextLayer("halo");
+    if (!coreLayer || !haloLayer) {
+      return { core: [], halo: [], worldWidth: 0, worldHeight: 0 };
+    }
+    const core = [];
+    const halo = [];
+    const coreStep = Math.max(1, textCfg.sampleStep | 0);
+    const haloStep = Math.max(1, textCfg.haloStep | 0);
+    const width = coreLayer.canvas.width;
+    const height = coreLayer.canvas.height;
+    for (let y = 0; y < height; y += coreStep) {
+      for (let x = 0; x < width; x += coreStep) {
+        const pixelIndex = (y * width + x) * 4;
+        const alpha = coreLayer.pixels[pixelIndex + 3];
+        if (alpha > 96) {
+          core.push({
+            x: x / width,
+            y: y / height
+          });
+        }
+      }
+    }
+    for (let y = 0; y < height; y += haloStep) {
+      for (let x = 0; x < width; x += haloStep) {
+        const pixelIndex = (y * width + x) * 4;
+        const haloAlpha = haloLayer.pixels[pixelIndex + 3];
+        const coreAlpha = coreLayer.pixels[pixelIndex + 3] || 0;
+        if (haloAlpha > 24 && coreAlpha < 50) {
+          halo.push({
+            x: x / width,
+            y: y / height
+          });
+        }
+      }
+    }
+    function shuffle(samples) {
+      for (let i = samples.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = samples[i];
+        samples[i] = samples[j];
+        samples[j] = tmp;
+      }
+    }
+    shuffle(core);
+    shuffle(halo);
+    const visibleWorldWidth = 2 * Math.tan(28 * Math.PI / 180) * 3 * aspect;
+    const worldWidth = useMobileLayout ? visibleWorldWidth * textCfg.mobileWidthRatio : Math.min(textCfg.desktopWidth, visibleWorldWidth * 0.9);
+    const worldHeight = worldWidth * (height / width);
+    const toWorld = (sample) => ({
+      x: (sample.x - 0.5) * worldWidth,
+      y: -(sample.y - 0.5) * worldHeight,
+      gradient: sample.x
+    });
+    return {
+      core: core.length ? core.map(toWorld) : halo.map(toWorld),
+      halo: halo.length ? halo.map(toWorld) : core.map(toWorld),
+      worldWidth,
+      worldHeight
+    };
+  }
+  function createGalaxy(canvas2, cfg) {
+    const gl = canvas2.getContext("webgl2", {
+      alpha: true,
+      antialias: false,
+      premultipliedAlpha: true,
+      depth: true,
+      powerPreference: "high-performance"
+    });
+    if (!gl) throw new Error("\u8FD9\u53F0\u673A\u5668\u7684\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 WebGL2\uFF0C\u65E0\u6CD5\u6E32\u67D3\u661F\u7A7A\u3002");
+    const star = program(gl, VERT, FRAG, "star");
+    const videoProg = program(gl, QUAD_VERT, VIDEO_FRAG, "video");
+    const count = Math.max(200, cfg.star.count | 0);
+    const stride = 14;
+    const data = new Float32Array(count * stride);
+    const vao = gl.createVertexArray();
+    const vbo = gl.createBuffer();
+    const quadVao = gl.createVertexArray();
+    const quadVbo = gl.createBuffer();
+    gl.bindVertexArray(quadVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    const videoTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, videoTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    const rad = (deg) => deg * Math.PI / 180;
+    let aspect = 1;
+    let halfH = 1;
+    let halfW = 1;
+    const rgb = [0, 0, 0];
+    function regenerate() {
+      const s = cfg.star;
+      const sp = s.spread;
+      const ga = s.gather;
+      const zPow = 1 / Math.max(0.4, s.depthPower);
+      const textLayers = sampleTextTargets(s);
+      const textCount = Math.round(count * Math.max(0, Math.min(1, s.text?.fraction || 0)));
+      const coreCount = Math.round(
+        textCount * Math.max(0.2, Math.min(0.9, s.text?.coreFraction || 0.64))
+      );
+      const coreTargets = textLayers.core;
+      const haloTargets = textLayers.halo;
+      const box = (half, isZ) => {
+        const v = (Math.random() * 2 - 1) * half;
+        if (!isZ || s.depthPower === 1) return v;
+        const t = Math.abs(v) / half;
+        return Math.sign(v) * Math.pow(t, zPow) * half;
+      };
+      for (let i = 0; i < count; i++) {
+        const o = i * stride;
+        const isCoreParticle = i < coreCount && coreTargets.length > 0;
+        const isHaloParticle = !isCoreParticle && i < textCount && haloTargets.length > 0;
+        let target = null;
+        if (isCoreParticle) {
+          target = coreTargets[Math.floor(Math.random() * coreTargets.length)];
+          data[o] = target.x + (Math.random() - 0.5) * s.text.jitter;
+          data[o + 1] = target.y + (Math.random() - 0.5) * s.text.jitter;
+          data[o + 2] = (Math.random() - 0.5) * s.text.zJitter;
+        } else if (isHaloParticle) {
+          target = haloTargets[Math.floor(Math.random() * haloTargets.length)];
+          data[o] = target.x + (Math.random() - 0.5) * s.text.haloJitter;
+          data[o + 1] = target.y + (Math.random() - 0.5) * s.text.haloJitter;
+          data[o + 2] = (Math.random() - 0.5) * s.text.haloZJitter;
+        } else {
+          const shrink = Math.random() < s.coreFraction ? 0.5 : 1;
+          data[o] = box(sp.x * shrink, false);
+          data[o + 1] = box(sp.y * shrink, false);
+          data[o + 2] = box(sp.z * shrink, true);
+        }
+        const gr = Math.pow(Math.random(), 0.55);
+        const dir = Math.random() * Math.PI * 2;
+        const elev = Math.acos(2 * Math.random() - 1);
+        data[o + 3] = Math.cos(dir) * Math.sin(elev) * gr * ga.x;
+        data[o + 4] = Math.cos(elev) * gr * ga.y;
+        data[o + 5] = Math.sin(dir) * Math.sin(elev) * gr * ga.z;
+        data[o + 6] = Math.random();
+        data[o + 7] = isCoreParticle ? 0.52 + Math.random() * 0.48 : isHaloParticle ? Math.random() * 0.18 : Math.pow(Math.random(), s.sizeBias);
+        data[o + 8] = Math.random() * 2 - 1;
+        data[o + 9] = Math.random();
+        if (isCoreParticle) {
+          const gradient = Math.max(0, Math.min(1, target?.gradient ?? 0.5));
+          const jewel = Math.random() * 0.04;
+          if (gradient < 0.55) {
+            const t = gradient / 0.55;
+            rgb[0] = 1;
+            rgb[1] = 0.97 - t * 0.15 + jewel;
+            rgb[2] = 0.9 - t * 0.4;
+          } else {
+            const t = (gradient - 0.55) / 0.45;
+            rgb[0] = 1;
+            rgb[1] = 0.82 - t * 0.2 + jewel;
+            rgb[2] = 0.5 + t * 0.18;
+          }
+        } else if (isHaloParticle) {
+          rgb[0] = 1;
+          rgb[1] = 0.62 + Math.random() * 0.16;
+          rgb[2] = 0.52 + Math.random() * 0.18;
+        } else {
+          rgb[0] = 0;
+          rgb[1] = 0;
+          rgb[2] = 0;
+          starColor(Math.random(), rgb);
+        }
+        data[o + 10] = rgb[0];
+        data[o + 11] = rgb[1];
+        data[o + 12] = rgb[2];
+        data[o + 13] = isCoreParticle ? 0.96 + 0.03 * Math.random() : isHaloParticle ? 0.24 + 0.16 * Math.random() : 0.2 + 0.15 * Math.random();
+      }
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      const S = stride * 4;
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, S, 0);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 3, gl.FLOAT, false, S, 12);
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 4, gl.FLOAT, false, S, 24);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 4, gl.FLOAT, false, S, 40);
+      gl.bindVertexArray(null);
+    }
+    regenerate();
+    const state = { collapse: 0, center: [0, 0], time: 0, dpr: 1 };
+    const eased = { collapse: 0, cx: 0, cy: 0 };
+    let dprCap = 1.5;
+    function resize() {
+      const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
+      const w = Math.max(1, Math.round(canvas2.clientWidth * dpr));
+      const h = Math.max(1, Math.round(canvas2.clientHeight * dpr));
+      if (canvas2.width !== w || canvas2.height !== h) {
+        canvas2.width = w;
+        canvas2.height = h;
+      }
+      state.dpr = dpr;
+      aspect = Math.max(0.2, canvas2.width / Math.max(1, canvas2.height));
+    }
+    function drawVideo(video2) {
+      resize();
+      const vw = video2.videoWidth || 1280;
+      const vh = video2.videoHeight || 720;
+      const cw = canvas2.width;
+      const ch = canvas2.height;
+      const cover = Math.max(cw / vw, ch / vh);
+      const dw = vw * cover / cw;
+      const dh = vh * cover / ch;
+      gl.bindTexture(gl.TEXTURE_2D, videoTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video2);
+      } catch {
+        return;
+      }
+      gl.viewport(0, 0, cw, ch);
+      gl.disable(gl.BLEND);
+      gl.useProgram(videoProg.program);
+      const u = videoProg.uniforms;
+      if (u.uTex) gl.uniform1i(u.uTex, 0);
+      if (u.uRect) gl.uniform4f(u.uRect, 1 - dw, 1 - dh, dw * 2, dh * 2);
+      if (u.uMirror) gl.uniform1f(u.uMirror, cfg.camera.mirror ? 1 : 0);
+      if (u.uBright) gl.uniform1f(u.uBright, cfg.look.cameraBright);
+      gl.bindVertexArray(quadVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+      gl.enable(gl.BLEND);
+    }
+    function render(dt) {
+      resize();
+      const v = cfg.viewer;
+      const glide = Math.min(1, (cfg.viewer.followGlide || 0.13) * dt / 16.7);
+      eased.cx += (state.center[0] - eased.cx) * glide;
+      eased.cy += (state.center[1] - eased.cy) * glide;
+      const easeTau = cfg.intent && cfg.intent.collapseEaseTau || 0.11;
+      const ease = 1 - Math.exp(-dt / 1e3 / Math.max(0.01, easeTau));
+      eased.collapse += (state.collapse - eased.collapse) * ease;
+      const collapse = eased.collapse;
+      const p = cfg.collapse.fallPow;
+      const fall = Math.pow(1 - collapse, p);
+      const fallPrev = Math.pow(1 - Math.max(0, collapse - 0.05), p);
+      const rush = Math.min(1, Math.abs(fallPrev - fall) / 0.2);
+      const dist2 = v.distance * (1 - v.dolly * collapse);
+      halfH = Math.tan(rad(v.halfFovDeg)) * dist2;
+      halfW = halfH * aspect;
+      const range = v.followRange === void 0 ? 1 : v.followRange;
+      const cx = (eased.cx - 0.5) * 2 * halfW * range;
+      const cy = -(eased.cy - 0.5) * 2 * halfH * range;
+      const f = 1 / Math.tan(rad(v.halfFovDeg));
+      const near = 0.05;
+      const far = dist2 + 14;
+      const proj = new Float32Array([
+        f / aspect,
+        0,
+        0,
+        0,
+        0,
+        f,
+        0,
+        0,
+        0,
+        0,
+        (far + near) / (near - far),
+        -1,
+        0,
+        0,
+        2 * far * near / (near - far),
+        0
+      ]);
+      const view = new Float32Array([
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        cx,
+        cy,
+        -dist2,
+        1
+      ]);
+      gl.viewport(0, 0, canvas2.width, canvas2.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.disable(gl.DEPTH_TEST);
+      gl.useProgram(star.program);
+      const u = star.uniforms;
+      if (u.uProj) gl.uniformMatrix4fv(u.uProj, false, proj);
+      if (u.uView) gl.uniformMatrix4fv(u.uView, false, view);
+      if (u.uTime) gl.uniform1f(u.uTime, state.time);
+      if (u.uCollapse) gl.uniform1f(u.uCollapse, collapse);
+      if (u.uTwist) gl.uniform1f(u.uTwist, cfg.collapse.twist);
+      if (u.uStagger) gl.uniform1f(u.uStagger, cfg.collapse.stagger);
+      if (u.uStretch) gl.uniform1f(u.uStretch, cfg.collapse.stretch);
+      if (u.uRush) gl.uniform1f(u.uRush, rush);
+      if (u.uPointScale) gl.uniform1f(u.uPointScale, dist2);
+      if (u.uFog) gl.uniform1f(u.uFog, cfg.look.fogDensity);
+      if (u.uRotate) gl.uniform1f(u.uRotate, cfg.viewer.rotate);
+      if (u.uEdge) gl.uniform1f(u.uEdge, cfg.star.edgeSoft);
+      if (u.uExposure) gl.uniform1f(u.uExposure, cfg.look.exposure);
+      const pxScale = Math.max(0.5, canvas2.clientHeight / 720);
+      if (u.uMinPx) gl.uniform1f(u.uMinPx, cfg.star.minSize * pxScale);
+      if (u.uMaxPx) gl.uniform1f(u.uMaxPx, cfg.star.maxSize * pxScale);
+      gl.bindVertexArray(vao);
+      gl.drawArrays(gl.POINTS, 0, count);
+      gl.bindVertexArray(null);
+    }
+    return {
+      regenerate,
+      render,
+      resize,
+      drawVideo,
+      setCollapse(v) {
+        state.collapse = Math.max(0, Math.min(1, v));
+      },
+      setCenter(x, y) {
+        state.center[0] = x;
+        state.center[1] = y;
+      },
+      advance(ms) {
+        state.time += ms / 1e3;
+      },
+      gl() {
+        return gl;
+      },
+      /** 降低渲染分辨率来换帧率（自适应调档用） */
+      setDprCap(v) {
+        dprCap = Math.max(0.6, Math.min(2, v));
+      },
+      get count() {
+        return count;
+      }
+    };
+  }
+
+  // js/calibration.js
+  var clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  function metricToOpen(metric, cfg, inverted = false) {
+    if (!Number.isFinite(metric)) return 1;
+    const hi = Number.isFinite(cfg.openRatio) ? cfg.openRatio : 1.75;
+    const lo = Number.isFinite(cfg.fistRatio) ? cfg.fistRatio : 0.95;
+    const span = Math.max(0.08, hi - lo);
+    let t = clamp01((metric - lo) / span);
+    if (inverted) t = 1 - t;
+    const band = Math.max(0, Math.min(0.35, cfg.openBand || 0));
+    if (t >= 1 - band) return 1;
+    if (t <= band) return 0;
+    const curve = cfg.expCurve || 1;
+    return clamp01(curve === 1 ? t : Math.pow(t, curve));
+  }
+  function applyDeadzone(open, dz) {
+    const d = dz === void 0 ? 0.18 : dz;
+    if (!(d > 0)) return clamp01(open);
+    if (open <= d) return 0;
+    return clamp01((open - d) / (1 - d));
+  }
+
+  // js/hand.js
+  var CDN_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14`;
+  var CDN_WASM = `${CDN_BASE}/wasm`;
+  var CDN_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  var CDN_ESM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs`;
+  var MP_MODULE = CDN_ESM;
+  var MP_WASM = CDN_WASM;
+  var MP_MODEL = CDN_MODEL;
+  var CONNECTIONS = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [0, 5],
+    [5, 6],
+    [6, 7],
+    [7, 8],
+    [5, 9],
+    [9, 10],
+    [10, 11],
+    [11, 12],
+    [9, 13],
+    [13, 14],
+    [14, 15],
+    [15, 16],
+    [13, 17],
+    [17, 18],
+    [18, 19],
+    [19, 20],
+    [0, 17]
+  ];
+  var TIPS = [4, 8, 12, 16, 20];
+  var dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  async function loadVisionModule() {
+    try {
+      return await import(MP_MODULE);
+    } catch (err) {
+      console.warn("\u672C\u5730 MediaPipe \u8FD0\u884C\u65F6\u7F3A\u5931\uFF0C\u6539\u7528 CDN\uFF1A", err?.message || err);
+      return await import(
+        /* @vite-ignore */
+        CDN_ESM
+      );
+    }
+  }
+  function isLocalHost() {
+    const h = location.hostname;
+    return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "";
+  }
+  var HandTracker = class {
+    constructor(video2, cfg) {
+      this.video = video2;
+      this.cfg = cfg;
+      this.landmarker = null;
+      this.ready = false;
+      this.error = null;
+      this.lastTs = 0;
+      this.lastVideoTime = -1;
+      this.lastLandmarks = null;
+      this.lastSeen = 0;
+      this.rawRatio = 0;
+      this.rawOpen = 1;
+      this.openness = 1;
+      this.center = { x: 0.5, y: 0.5 };
+      this.centerVel = { x: 0, y: 0 };
+      this.centerAt = 0;
+      this.lastVideoAgeMs = 0;
+      this._lastDetectAt = 0;
+      this.inverted = cfg.intent.invert;
+    }
+    async init() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          isLocalHost() ? "\u8FD9\u4E2A\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u6444\u50CF\u5934 API\u3002\u8BF7\u6362 Chrome / Edge \u6253\u5F00\u3002" : "\u6D4F\u89C8\u5668\u53EA\u5141\u8BB8 https \u6216 localhost \u4F7F\u7528\u6444\u50CF\u5934\uFF0C\u8BF7\u7528 npm start \u542F\u52A8\u540E\u8BBF\u95EE http://127.0.0.1:... \u3002"
+        );
+      }
+      const { FilesetResolver, HandLandmarker } = await loadVisionModule();
+      const vision = await FilesetResolver.forVisionTasks(MP_WASM).catch(
+        () => FilesetResolver.forVisionTasks(CDN_WASM)
+      );
+      const options = {
+        runningMode: "VIDEO",
+        numHands: Math.max(1, this.cfg.intent.maxHands | 0),
+        minHandDetectionConfidence: this.cfg.intent.minConfidence,
+        minHandPresenceConfidence: 0.3,
+        minTrackingConfidence: 0.3
+      };
+      this.landmarker = await HandLandmarker.createFromOptions(vision, {
+        ...options,
+        baseOptions: { modelAssetPath: MP_MODEL, delegate: "GPU" }
+      }).catch(
+        () => HandLandmarker.createFromOptions(vision, {
+          ...options,
+          baseOptions: { modelAssetPath: CDN_MODEL, delegate: "GPU" }
+        })
+      );
+      await this.startCamera();
+      this.ready = true;
+    }
+    async startCamera() {
+      const c = this.cfg.camera;
+      const attempts = [
+        { video: { width: { ideal: c.width }, height: { ideal: c.height }, frameRate: { ideal: c.fps } } },
+        { video: { facingMode: "user" } },
+        { video: true }
+      ];
+      let lastErr;
+      for (const constraints of attempts) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          const v = this.video;
+          v.srcObject = stream;
+          v.muted = true;
+          v.playsInline = true;
+          await v.play();
+          if (v.readyState < 2) {
+            await new Promise((res) => v.addEventListener("loadeddata", res, { once: true }));
+          }
+          return stream;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      const name = lastErr && lastErr.name;
+      if (name === "NotAllowedError") throw new Error("\u6444\u50CF\u5934\u6743\u9650\u88AB\u62D2\u7EDD\u3002\u8BF7\u5728\u5730\u5740\u680F\u5141\u8BB8\u6444\u50CF\u5934\u540E\u5237\u65B0\u9875\u9762\u3002");
+      if (name === "NotFoundError") throw new Error("\u6CA1\u6709\u627E\u5230\u6444\u50CF\u5934\u8BBE\u5907\u3002");
+      throw new Error("\u6253\u5F00\u6444\u50CF\u5934\u5931\u8D25\uFF1A" + (lastErr?.message || name || "\u672A\u77E5\u9519\u8BEF"));
+    }
+    // 保证时间戳严格递增，否则 MediaPipe 会抛错
+    nextTimestamp() {
+      const now = performance.now();
+      this.lastTs = now <= this.lastTs ? this.lastTs + 0.5 : now;
+      return this.lastTs;
+    }
+    /** 五指开合的原始度量：越大 = 越张开 */
+    measure(lm) {
+      const wrist = lm[0];
+      const base = Math.max(1e-4, dist(wrist, lm[9]));
+      let sum = 0;
+      for (const t of TIPS) sum += dist(lm[t], wrist);
+      return sum / TIPS.length / base;
+    }
+    /**
+     * 识别一次。返回 null 表示这一帧没有新手部数据
+     * （视频没有新帧，或者没检测到手）。
+     * 返回：{ landmarks, open, metric, center, centerVel, captureAt, ageMs }
+     * open 是未做时间平滑的瞬时开合度，由 main.js 每帧平滑。
+     */
+    detect() {
+      const v = this.video;
+      if (!this.ready || v.readyState < 2) return null;
+      if (v.currentTime === this.lastVideoTime) return null;
+      this.lastVideoTime = v.currentTime;
+      const nowBefore = performance.now();
+      const ageLowerBound = this._lastDetectAt ? Math.max(0, nowBefore - this._lastDetectAt) : 0;
+      let result;
+      try {
+        result = this.landmarker.detectForVideo(v, this.nextTimestamp());
+        this.error = null;
+      } catch (err) {
+        this.error = err.message;
+        return null;
+      }
+      const nowAfter = performance.now();
+      this._lastDetectAt = nowAfter;
+      const inferenceMs = nowAfter - nowBefore;
+      this.lastVideoAgeMs = Math.min(250, ageLowerBound + inferenceMs);
+      this.lastCaptureAt = nowAfter - this.lastVideoAgeMs;
+      const hands = result?.landmarks;
+      if (!hands || !hands.length) return null;
+      let best = null;
+      for (const lm of hands) {
+        const m = this.measure(lm);
+        if (!best || m < best.metric) best = { lm, metric: m };
+      }
+      const metric = best.metric;
+      this.rawRatio = metric;
+      const open = this.metricToOpen(metric);
+      this.rawOpen = open;
+      this.openness = open;
+      this.lastLandmarks = best.lm;
+      this.lastSeen = nowAfter;
+      const center = this.palmCenter(best.lm);
+      const dtMs = nowAfter - (this.centerAt || 0);
+      if (dtMs > 8 && dtMs < (this.cfg.intent.velResetMs || 400)) {
+        const instX = (center.x - this.center.x) / (dtMs / 1e3);
+        const instY = (center.y - this.center.y) / (dtMs / 1e3);
+        const vTau = this.cfg.intent.velGlide || 0.055;
+        const k = 1 - Math.exp(-dtMs / 1e3 / Math.max(0.02, vTau));
+        this.centerVel.x += (instX - this.centerVel.x) * k;
+        this.centerVel.y += (instY - this.centerVel.y) * k;
+        const sp = Math.hypot(this.centerVel.x, this.centerVel.y);
+        const maxSp = this.cfg.intent.maxSpeed || 2.4;
+        if (sp > maxSp) {
+          this.centerVel.x *= maxSp / sp;
+          this.centerVel.y *= maxSp / sp;
+        }
+      } else {
+        this.centerVel.x = 0;
+        this.centerVel.y = 0;
+      }
+      this.center = center;
+      this.centerAt = nowAfter;
+      return {
+        landmarks: best.lm,
+        open,
+        // 未做时间平滑的瞬时开合度，由 main.js 每帧平滑
+        metric,
+        center,
+        centerVel: this.centerVel,
+        captureAt: this.lastCaptureAt,
+        ageMs: this.lastVideoAgeMs
+      };
+    }
+    /**
+     * 度量 → 开合度：1 = 完全张开（散开），0 = 完全握紧（聚合）
+     * 用固定阈值（config.intent.openRatio / fistRatio），不做任何学习 ——
+     * 所以任何时候、用多久，同一个手型都得到同一个结果。
+     * 具体算法在 calibration.js（和自检共用同一份）。
+     */
+    metricToOpen(metric) {
+      return metricToOpen(metric, this.cfg.intent, this.inverted);
+    }
+    /** 一键翻转方向（如果发现「握拳散开 / 张手聚拢」就用它） */
+    toggleInvert() {
+      this.inverted = !this.inverted;
+      this.cfg.intent.invert = this.inverted;
+      return this.inverted;
+    }
+    /**
+     * 当前度量、固定阈值和方向，方便在 HUD 上显示/排查。
+     * 阈值是固定的，所以这些值不会随使用时间变化。
+     */
+    get debugInfo() {
+      const g = this.cfg.intent;
+      return {
+        metric: this.rawRatio,
+        min: g.fistRatio,
+        max: g.openRatio,
+        inverted: this.inverted
+      };
+    }
+    /** 手掌中心（0~1 归一化坐标，相对视频画面；已按镜像翻转） */
+    palmCenter(lm) {
+      const ids = [0, 5, 9, 13, 17];
+      let x = 0;
+      let y = 0;
+      for (const i of ids) {
+        x += lm[i].x;
+        y += lm[i].y;
+      }
+      x /= ids.length;
+      y /= ids.length;
+      if (this.cfg.camera.mirror) x = 1 - x;
+      return { x, y };
+    }
+    /** 手掌大小（归一化）：手腕 → 中指根，用于画骨架时定粗细 */
+    palmSize(lm) {
+      return Math.max(0.02, dist(lm[0], lm[9]));
+    }
+    /** 最近是否看到过手（短暂丢失也算「在」） */
+    get handPresent() {
+      return performance.now() - this.lastSeen < (this.cfg.intent.engageMs || 1200);
+    }
+    static get CONNECTIONS() {
+      return CONNECTIONS;
+    }
+  };
+
+  // js/main.js
+  var $ = (id) => document.getElementById(id);
+  var canvas = $("stage");
+  var video = $("cam");
+  var skeleton = $("skeleton");
+  var sctx = skeleton.getContext("2d");
+  var hud = $("hud");
+  var measure = $("measure");
+  var measureLabel = $("measure-label");
+  var hints = $("hints");
+  var loading = $("loading");
+  var loadingText = $("loading-text");
+  var errorBox = $("error");
+  var toast = $("toast");
+  var fpsEl = $("fps");
+  var centerReadout = $("center-readout");
+  var handDebug = $("hand-debug");
+  var intentLabel = $("intent-label");
+  var startGate = $("start-gate");
+  var startButton = $("start-button");
+  var isMobileDevice = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 || window.innerWidth <= 820;
+  if (isMobileDevice) {
+    config.star.count = Math.min(config.star.count, 3800);
+    config.perf.maxDpr = Math.min(config.perf.maxDpr, 1.1);
+    config.intent.detectEvery = Math.max(config.intent.detectEvery, 2);
+  }
+  var clamp012 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  var lerp = (a, b, t) => a + (b - a) * t;
+  var smoothK = (tau, dtMs) => 1 - Math.exp(-dtMs / 1e3 / Math.max(1e-3, tau));
+  function applyDeadzone2(open, dz = config.intent.openDeadzone) {
+    return applyDeadzone(open, dz);
+  }
+  function intentName(open) {
+    if (open > 0.82) return "\u5F20\u5F00 \xB7 \u6587\u5B57\u4EAE\u8D77";
+    if (open > 0.55) return "\u5F20\u5F00\u4E2D \xB7 \u6587\u5B57\u6D6E\u73B0";
+    if (open > 0.28) return "\u534A\u63E1 \xB7 \u661F\u5149\u6536\u62E2";
+    return "\u63E1\u62F3 \xB7 \u805A\u5408";
+  }
+  var jsErrors = [];
+  function noteError(where, err) {
+    const msg = `${where}: ${err?.message || err}`;
+    jsErrors.push(msg);
+    console.error(msg, err);
+    const el = $("js-errors");
+    if (el) el.textContent = jsErrors.join("\n");
+  }
+  window.addEventListener("error", (e) => noteError("window", e.error || e.message));
+  window.addEventListener("unhandledrejection", (e) => noteError("promise", e.reason));
+  var field;
+  try {
+    field = createGalaxy(canvas, config);
+  } catch (err) {
+    loading.remove();
+    fail(err.message);
+    throw err;
+  }
+  var control = {
+    pointer: { x: 0.5, y: 0.5, down: false },
+    keyCollapse: 0,
+    source: "pointer",
+    collapse: 0
+  };
+  var handState = {
+    engaged: false,
+    // 是否还有手（含短暂丢失的宽限）
+    engage: 0,
+    // 0~1 的平滑参与度：手势与鼠标两路的连续混合权重
+    x: 0.5,
+    y: 0.5,
+    vx: 0,
+    vy: 0,
+    rawX: 0.5,
+    rawY: 0.5,
+    open: 1,
+    // 平滑后的开合度（1 张开 / 0 握紧）
+    openRaw: 1,
+    lastDetect: 0,
+    lastSeen: 0,
+    lastCaptureAt: 0,
+    // 这一帧画面被拍到的时刻（外推的时间基准）
+    videoAgeMs: 0
+  };
+  var tracker = null;
+  var dtScale = 1;
+  var fps = 0;
+  var fpsFrames = 0;
+  var fpsClock = 0;
+  var handFrame = 0;
+  var toastTimer = 0;
+  var last = performance.now();
+  var perfCfg = config.perf || {};
+  var perf = {
+    level: 0,
+    detectInterval: Math.max(1, config.intent.detectEvery | 0),
+    dprCap: perfCfg.maxDpr || 1.5,
+    cooldown: 0
+  };
+  var perfLevels = [
+    { detect: Math.max(1, config.intent.detectEvery | 0), dpr: perfCfg.maxDpr || 1.5 },
+    { detect: Math.max(2, (config.intent.detectEvery | 0) * 2), dpr: 1.25 },
+    { detect: Math.min(perfCfg.minDetectEvery || 3, 3), dpr: 1 },
+    { detect: perfCfg.minDetectEvery || 3, dpr: 0.85 }
+  ];
+  function applyPerfLevel(level) {
+    const i = Math.max(0, Math.min(perfLevels.length - 1, level));
+    if (i === perf.level && perf.dprCap === perfLevels[i].dpr) return;
+    perf.level = i;
+    perf.detectInterval = perfLevels[i].detect;
+    perf.dprCap = perfLevels[i].dpr;
+    field.setDprCap(perf.dprCap);
+  }
+  function tunePerformance(currentFps, dt) {
+    if (!perfCfg.adaptive) return;
+    perf.cooldown -= dt;
+    if (perf.cooldown > 0) return;
+    if (performance.now() < 4e3) return;
+    if (dt > 60) return;
+    if (currentFps && currentFps < (perfCfg.fpsLow || 50) && perf.level < perfLevels.length - 1) {
+      applyPerfLevel(perf.level + 1);
+      perf.cooldown = 2500;
+    } else if (currentFps > (perfCfg.fpsHigh || 57) && perf.level > 0) {
+      applyPerfLevel(perf.level - 1);
+      perf.cooldown = 6e3;
+    }
+  }
+  function setLoading(text) {
+    if (!loading.isConnected) return;
+    loadingText.textContent = text;
+  }
+  function hideLoading() {
+    if (loading.isConnected) loading.remove();
+  }
+  function fail(message) {
+    errorBox.hidden = false;
+    errorBox.textContent = message;
+  }
+  function showToast(message, ms = 2600) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
+  }
+  function syncMeasure(openness) {
+    const pct = Math.round(clamp012(openness) * 100);
+    measure.style.setProperty("--v", `${pct}%`);
+    measureLabel.textContent = `${pct}%`;
+    if (intentLabel) intentLabel.textContent = intentName(clamp012(openness));
+  }
+  function fitOverlay() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    skeleton.width = Math.max(1, Math.round(skeleton.clientWidth * dpr));
+    skeleton.height = Math.max(1, Math.round(skeleton.clientHeight * dpr));
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function applyLook() {
+    document.body.style.setProperty("--nebula", String(config.look.nebula));
+  }
+  fitOverlay();
+  applyLook();
+  var resizeTimer = 0;
+  function handleResize() {
+    fitOverlay();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => field.regenerate(), 180);
+  }
+  window.addEventListener("resize", handleResize);
+  function pointerMove(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    control.pointer.x = clamp012((clientX - r.left) / Math.max(1, r.width));
+    control.pointer.y = clamp012((clientY - r.top) / Math.max(1, r.height));
+  }
+  window.addEventListener("pointermove", (e) => pointerMove(e.clientX, e.clientY));
+  window.addEventListener("pointerdown", (e) => {
+    control.pointer.down = true;
+    pointerMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("pointerup", () => {
+    control.pointer.down = false;
+  });
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (k === " ") {
+      e.preventDefault();
+      control.keyCollapse = control.keyCollapse > 0.5 ? 0 : 1;
+      showToast(control.keyCollapse > 0.5 ? "\u7A7A\u683C\uFF1A\u661F\u5149\u805A\u5408\uFF08\u624B\u52A8\uFF09" : "\u7A7A\u683C\uFF1A\u6587\u5B57\u4EAE\u8D77\uFF08\u624B\u52A8\uFF09");
+    } else if (k === "i") {
+      if (tracker) {
+        const inv = tracker.toggleInvert();
+        showToast(inv ? "\u5DF2\u53CD\u8F6C\u624B\u52BF\u65B9\u5411\uFF08\u5F53\u524D\uFF1A\u63E1\u62F3 = \u805A\u5408\uFF09" : "\u624B\u52BF\u65B9\u5411\u5DF2\u6062\u590D", 3e3);
+      } else {
+        showToast("\u624B\u90E8\u8BC6\u522B\u8FD8\u6CA1\u5C31\u7EEA", 2e3);
+      }
+    } else if (k === "c") {
+      showToast(
+        `\u65B9\u5411\uFF1A${config.intent.invert ? "\u5DF2\u53CD\u8F6C" : "\u6B63\u5E38"} \xB7 \u9608\u503C \u5F20\u5F00 ${config.intent.openRatio} / \u63E1\u62F3 ${config.intent.fistRatio}\uFF08\u56FA\u5B9A\uFF0C\u4E0D\u968F\u65F6\u95F4\u53D8\u5316\uFF09`,
+        3600
+      );
+    } else if (k === "v") {
+      config.view.showCamera = !config.view.showCamera;
+      showToast(config.view.showCamera ? "\u663E\u793A\u6444\u50CF\u5934\u753B\u9762\uFF08\u6CE8\u610F\uFF1A\u5B83\u4F1A\u8DDF\u7740\u6444\u50CF\u5934\u5E27\u7387\uFF09" : "\u7EAF\u661F\u7A7A");
+    } else if (k === "s") {
+      config.view.showSkeleton = !config.view.showSkeleton;
+      showToast(config.view.showSkeleton ? "\u663E\u793A\u9AA8\u67B6\uFF08\u53D7\u6444\u50CF\u5934\u5E27\u7387\u9650\u5236\uFF09" : "\u9690\u85CF\u9AA8\u67B6");
+    } else if (k === "g") {
+      config.view.showGestureRing = !config.view.showGestureRing;
+      showToast(config.view.showGestureRing ? "\u663E\u793A\u610F\u56FE\u6307\u793A\u73AF" : "\u9690\u85CF\u6307\u793A\u73AF");
+    } else if (k === "r") {
+      field.regenerate();
+      showToast("\u91CD\u65B0\u6392\u5217\u201C\u91D1\u82B7\u4F0A\u751F\u65E5\u5FEB\u4E50\u201D");
+    } else if (k === "h") {
+      hints.classList.toggle("hidden");
+      hud.classList.toggle("hidden");
+    } else if (k === "d") {
+      handDebug.classList.toggle("hidden");
+    } else if (k === "m") {
+      config.camera.mirror = !config.camera.mirror;
+      showToast(config.camera.mirror ? "\u955C\u50CF\uFF1A\u5F00" : "\u955C\u50CF\uFF1A\u5173");
+    }
+  });
+  function drawSkeleton(lm, tight) {
+    const w = skeleton.clientWidth;
+    const h = skeleton.clientHeight;
+    const mirror = config.camera.mirror;
+    const px = (i) => (mirror ? 1 - lm[i].x : lm[i].x) * w;
+    const py = (i) => lm[i].y * h;
+    const thickness = Math.max(1.6, tracker.palmSize(lm) * h * 0.02);
+    const cr = Math.round(90 + 165 * tight);
+    const cg = Math.round(235 - 55 * tight);
+    const cb = Math.round(255 - 185 * tight);
+    sctx.lineWidth = thickness;
+    sctx.strokeStyle = `rgba(${cr},${cg},${cb},0.55)`;
+    sctx.shadowColor = `rgba(${cr},${cg},${cb},0.9)`;
+    sctx.shadowBlur = 10;
+    sctx.beginPath();
+    for (const [a, b] of HandTracker.CONNECTIONS) {
+      sctx.moveTo(px(a), py(a));
+      sctx.lineTo(px(b), py(b));
+    }
+    sctx.stroke();
+    sctx.shadowBlur = 14;
+    sctx.fillStyle = `rgba(${cr},${cg},${cb},0.95)`;
+    for (let i = 0; i < lm.length; i++) {
+      const r = i === 0 || i === 9 ? thickness * 1.5 : thickness * 0.85;
+      sctx.beginPath();
+      sctx.arc(px(i), py(i), r, 0, Math.PI * 2);
+      sctx.fill();
+    }
+  }
+  function drawIntentRing(showSkeleton, lm, tight) {
+    const w = skeleton.clientWidth;
+    const h = skeleton.clientHeight;
+    sctx.clearRect(0, 0, w, h);
+    if (showSkeleton && lm) drawSkeleton(lm, tight);
+    const fade = clamp012(handState.engage);
+    if (!config.view.showGestureRing || fade < 0.02) return;
+    const cx = handState.x * w;
+    const cy = handState.y * h;
+    const open = clamp012(1 - tight);
+    const cr = Math.round(90 + 165 * tight);
+    const cg = Math.round(235 - 55 * tight);
+    const cb = Math.round(255 - 185 * tight);
+    const base = Math.max(26, Math.min(w, h) * 0.05);
+    const radius = base * (0.5 + 0.85 * open);
+    sctx.save();
+    sctx.globalAlpha = fade;
+    sctx.strokeStyle = `rgba(${cr},${cg},${cb},0.5)`;
+    sctx.lineWidth = 2;
+    sctx.beginPath();
+    sctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    sctx.stroke();
+    sctx.fillStyle = `rgba(${cr},${cg},${cb},0.85)`;
+    sctx.beginPath();
+    sctx.arc(cx, cy, 3.2, 0, Math.PI * 2);
+    sctx.fill();
+    if (!handDebug.classList.contains("hidden")) {
+      sctx.setLineDash([4, 5]);
+      sctx.strokeStyle = "rgba(255,255,255,0.35)";
+      sctx.lineWidth = 1.5;
+      sctx.beginPath();
+      sctx.arc(handState.rawX * w, handState.rawY * h, radius * 0.8, 0, Math.PI * 2);
+      sctx.stroke();
+      sctx.beginPath();
+      sctx.moveTo(cx, cy);
+      sctx.lineTo(handState.rawX * w, handState.rawY * h);
+      sctx.stroke();
+    }
+    sctx.restore();
+  }
+  async function bootTracker() {
+    setLoading("\u6B63\u5728\u52A0\u8F7D\u624B\u90E8\u8BC6\u522B\u6A21\u578B\u2026");
+    const t = new HandTracker(video, config);
+    await t.init();
+    tracker = t;
+    hideLoading();
+    showToast("\u5C31\u7EEA\uFF1A\u63E1\u7D27\u62F3\u5934 \u2192 \u661F\u5149\u805A\u5408\uFF1B\u5F20\u5F00\u624B\u638C \u2192 \u91D1\u82B7\u4F0A\u751F\u65E5\u5FEB\u4E50", 4200);
+  }
+  function handleTrackerFailure(err) {
+    hideLoading();
+    fail("\u624B\u90E8\u8BC6\u522B\u542F\u52A8\u5931\u8D25\uFF1A" + (err?.message || err) + "\uFF08\u7C92\u5B50\u6587\u5B57\u4ECD\u53EF\u6B63\u5E38\u89C2\u770B\uFF09");
+    noteError("\u624B\u90E8\u8BC6\u522B", err);
+  }
+  function beginTracker() {
+    if (startGate) startGate.hidden = true;
+    if (loading) loading.hidden = false;
+    bootTracker().catch(handleTrackerFailure);
+  }
+  if (isMobileDevice && startGate && startButton) {
+    if (loading) loading.hidden = true;
+    startGate.hidden = false;
+    startButton.addEventListener("click", beginTracker, { once: true });
+  } else {
+    beginTracker();
+  }
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch((err) => {
+        console.warn("Service Worker \u6CE8\u518C\u5931\u8D25\uFF0C\u9875\u9762\u4ECD\u53EF\u6B63\u5E38\u4F7F\u7528\uFF1A", err);
+      });
+    });
+  }
+  if (new URLSearchParams(location.search).has("test")) {
+    Promise.resolve().then(() => (init_selftest(), selftest_exports)).then(
+      ({ installSelfTest: installSelfTest2 }) => installSelfTest2({ galaxy: field, config, errors: jsErrors, resultEl: $("selftest-result") })
+    ).catch((err) => noteError("\u81EA\u68C0", err));
+  }
+  function updateIntent(now) {
+    handFrame++;
+    if (!tracker || !tracker.ready) return;
+    if (handFrame < perf.detectInterval) return;
+    handFrame = 0;
+    const det = tracker.detect();
+    if (!det) return;
+    handState.engaged = true;
+    handState.lastDetect = now;
+    handState.lastSeen = now;
+    handState.lastCaptureAt = det.captureAt || now;
+    handState.videoAgeMs = det.ageMs || 0;
+    handState.rawX = det.center.x;
+    handState.rawY = det.center.y;
+    handState.openRaw = det.open;
+    handState.vx = tracker.centerVel.x;
+    handState.vy = tracker.centerVel.y;
+  }
+  function frame(now) {
+    const dt = Math.min(50, Math.max(4, now - last));
+    last = now;
+    dtScale = dt / 16.7;
+    fpsFrames++;
+    fpsClock += dt;
+    if (fpsClock > 400) {
+      fps = Math.round(fpsFrames * 1e3 / fpsClock);
+      fpsFrames = 0;
+      fpsClock = 0;
+      tunePerformance(fps, dt);
+    }
+    field.advance(dt);
+    updateIntent(now);
+    const seeingHand = handState.engaged && now - handState.lastSeen < (config.intent.engageMs || 1600);
+    const kEngage = smoothK(Math.max(0.05, (config.intent.engageRampMs || 500) / 1e3 / 2.2), dt);
+    handState.engage = clamp012(lerp(handState.engage, seeingHand ? 1 : 0, kEngage));
+    if (!seeingHand) handState.engaged = false;
+    const sinceCapture = Math.max(0, now - (handState.lastCaptureAt || now));
+    const age = Math.min(400, sinceCapture);
+    const lead = (config.intent.leadMs || 0) / 1e3;
+    const maxLead = config.intent.maxLeadPx || 0.22;
+    const velDecay = Math.exp(-sinceCapture / 1e3 / Math.max(0.05, config.intent.velReleaseTau || 0.35));
+    const predX = handState.rawX + handState.vx * velDecay * (age / 1e3 + lead);
+    const predY = handState.rawY + handState.vy * velDecay * (age / 1e3 + lead);
+    const px = handState.rawX + Math.max(-maxLead, Math.min(maxLead, predX - handState.rawX));
+    const py = handState.rawY + Math.max(-maxLead, Math.min(maxLead, predY - handState.rawY));
+    const kPos = smoothK(config.intent.posTau || 0.055, dt);
+    const tauOpen = config.intent.openTau || 0.1;
+    const tauClose = config.intent.closeTau || 0.28;
+    const rateOpen = smoothK(tauOpen, dt);
+    const rateClose = smoothK(tauClose, dt);
+    const mouseTargetX = control.pointer.x;
+    const mouseTargetY = control.pointer.y;
+    const targetX = lerp(mouseTargetX, px, handState.engage);
+    const targetY = lerp(mouseTargetY, py, handState.engage);
+    handState.x = lerp(handState.x, targetX, kPos);
+    handState.y = lerp(handState.y, targetY, kPos);
+    const openHand = applyDeadzone2(tracker ? tracker.openness : 1);
+    const openTarget = lerp(1, openHand, handState.engage);
+    const rate = openTarget > handState.open ? rateOpen : rateClose;
+    handState.open = lerp(handState.open, openTarget, rate);
+    const handCollapse = 1 - handState.open;
+    const mouseCollapse = control.keyCollapse > 0 || control.pointer.down ? 1 : clamp012((control.pointer.y - 0.15) / 0.7);
+    const collapse = lerp(mouseCollapse, handCollapse, handState.engage);
+    const source = handState.engage > 0.5 ? "hand" : mouseCollapse > 0.5 ? "manual" : "pointer";
+    control.collapse = collapse;
+    control.source = source;
+    field.setCenter(clamp012(handState.x), clamp012(handState.y));
+    field.setCollapse(collapse);
+    if (config.view.showCamera && video.readyState >= 2) {
+      field.drawVideo(video);
+    }
+    field.render(dt);
+    drawIntentRing(
+      config.view.showSkeleton && handState.engage > 0.05,
+      handState.engage > 0.05 ? tracker.lastLandmarks : null,
+      collapse
+    );
+    syncMeasure(lerp(1 - mouseCollapse, handState.open, handState.engage));
+    const srcText = source === "hand" ? "\u624B\u52BF" : source === "manual" ? "\u952E\u76D8/\u9F20\u6807" : "\u9F20\u6807\u4F4D\u7F6E";
+    const perfText = perf.level > 0 ? ` \xB7 \u7701\u7535\u6863${perf.level}` : "";
+    fpsEl.textContent = tracker?.ready ? `${fps} FPS${perfText}` : `${fps} FPS \xB7 \u8BC6\u522B\u672A\u542F\u7528`;
+    centerReadout.textContent = `${srcText} \xB7 \u805A\u5408 ${(collapse * 100).toFixed(0)}%`;
+    if (tracker?.ready && handDebug && !handDebug.classList.contains("hidden")) {
+      const d = tracker.debugInfo;
+      const lag = Math.hypot(handState.x - handState.rawX, handState.y - handState.rawY);
+      handDebug.textContent = `\u624B\u578B\u5EA6\u91CF ${Number.isFinite(d.metric) ? d.metric.toFixed(3) : "--"}
+\u56FA\u5B9A\u9608\u503C \u63E1\u62F3 ${d.min} ~ \u5F20\u5F00 ${d.max}${d.inverted ? "\uFF08\u5DF2\u53CD\u8F6C\uFF09" : ""} \xB7 \u4E0D\u968F\u65F6\u95F4\u53D8\u5316
+\u5F00\u5408\u5EA6 \u539F\u59CB ${(handState.openRaw * 100).toFixed(0)}% \u2192 \u5E73\u6ED1 ${(handState.open * 100).toFixed(0)}%
+\u5916\u63A8\u9886\u5148 ${(lag * 100).toFixed(1)}% \u5C4F\u5BBD \xB7 \u8BC6\u522B\u95F4\u9694 ${age.toFixed(0)}ms
+${fps} FPS \xB7 \u8BC6\u522B\u6BCF ${perf.detectInterval} \u5E27 \xB7 \u6E32\u67D3 ${perf.dprCap}x`;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+</script>
+</body>
+</html>
